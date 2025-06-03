@@ -4,15 +4,16 @@ import { equals, map, zipWith } from 'ramda';
 import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNumExp,
          isPrimOp, isProcExp, isProgram, isStrExp, isVarRef, parseL5Exp, unparse,
          AppExp, BoolExp, DefineExp, Exp, IfExp, LetrecExp, LetExp, NumExp,
-         Parsed, PrimOp, ProcExp, Program, StrExp } from "./L5-ast";
+         Parsed, PrimOp, ProcExp, Program, StrExp, isLitExp, LitExp } from "./L5-ast";
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
-         parseTE, unparseTExp,
-         BoolTExp, NumTExp, StrTExp, TExp, VoidTExp } from "./TExp";
+         parseTE, unparseTExp, BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, makeSymbolTExp,
+         makeEmptyTExp, makeListTExp, makePairTExp } from "./TExp";
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
 import { Result, makeFailure, bind, makeOk, zipWithResult } from '../shared/result';
 import { parse as p } from "../shared/parser";
 import { format } from '../shared/format';
+import { isSymbolSExp, isEmptySExp, isCompoundSExp } from './L5-value';
 
 // Purpose: Check that type expressions are equivalent
 // as part of a fully-annotated type check process of exp.
@@ -52,7 +53,7 @@ export const typeofExp = (exp: Parsed, tenv: TEnv): Result<TExp> =>
     isLetrecExp(exp) ? typeofLetrec(exp, tenv) :
     isDefineExp(exp) ? typeofDefine(exp, tenv) :
     isProgram(exp) ? typeofProgram(exp, tenv) :
-    // TODO: isSetExp(exp) isLitExp(exp)
+    isLitExp(exp) ? typeofLit(exp) :
     makeFailure(`Unknown type: ${format(exp)}`);
 
 // Purpose: Compute the type of a sequence of expressions
@@ -90,12 +91,16 @@ export const typeofPrim = (p: PrimOp): Result<TExp> =>
     (p.op === '>') ? numCompTExp :
     (p.op === '<') ? numCompTExp :
     (p.op === '=') ? numCompTExp :
+    // Add pair operations
+    (p.op === 'cons') ? parseTE('(T1 * T2 -> (Pair T1 T2))') :
+    (p.op === 'car') ? parseTE('((Pair T1 T2) -> T1)') :
+    (p.op === 'cdr') ? parseTE('((Pair T1 T2) -> T2)') :
+    (p.op === 'pair?') ? parseTE('(T -> boolean)') :
     // Important to use a different signature for each op with a TVar to avoid capture
     (p.op === 'number?') ? parseTE('(T -> boolean)') :
     (p.op === 'boolean?') ? parseTE('(T -> boolean)') :
     (p.op === 'string?') ? parseTE('(T -> boolean)') :
     (p.op === 'list?') ? parseTE('(T -> boolean)') :
-    (p.op === 'pair?') ? parseTE('(T -> boolean)') :
     (p.op === 'symbol?') ? parseTE('(T -> boolean)') :
     (p.op === 'not') ? parseTE('(boolean -> boolean)') :
     (p.op === 'eq?') ? parseTE('(T1 * T2 -> boolean)') :
@@ -211,14 +216,65 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 // Purpose: compute the type of a define
 // Typing rule:
 //   (define (var : texp) val)
-// TODO - write the true definition
+// If   type<val>(tenv) = texp
+// then type<(define (var : texp) val)>(tenv) = void
 export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
-    // return Error("TODO");
-    return makeOk(makeVoidTExp());
+    const valTE = typeofExp(exp.val, tenv);
+    const constraint = bind(valTE, (valueTE: TExp) => 
+                            checkEqualType(valueTE, exp.var.texp, exp));
+    return bind(constraint, _ => makeOk(makeVoidTExp()));
 };
 
 // Purpose: compute the type of a program
 // Typing rule:
-// TODO - write the true definition
-export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> =>
-    makeFailure("TODO");
+// If   type<exp1>(tenv) = t1
+//      ...
+//      type<expn>(tenv) = tn
+// then type<(L5 exp1 ... expn)>(tenv) = tn
+export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> => {
+    // Handle empty program
+    if (exp.exps.length === 0)
+        return makeFailure("Empty program");
+
+    // Process each expression in sequence, threading the type environment
+    return bind(
+        exp.exps.reduce<Result<[TExp, TEnv]>>(
+            (acc: Result<[TExp, TEnv]>, current: Exp) => 
+                bind(acc, ([_, tenv]: [TExp, TEnv]) => {
+                    const expTE = typeofExp(current, tenv);
+                    if (isDefineExp(current))
+                        // For define expressions, extend the type environment
+                        return bind(expTE, (_: TExp) => 
+                            makeOk([makeVoidTExp(), makeExtendTEnv([current.var.var], [current.var.texp], tenv)]));
+                    else
+                        // For other expressions, keep the same environment
+                        return bind(expTE, (te: TExp) => makeOk([te, tenv]));
+                }),
+            makeOk([makeVoidTExp(), tenv])
+        ),
+        ([finalTE, _]: [TExp, TEnv]) => makeOk(finalTE)
+    );
+};
+
+// Add typeofLit function to handle quoted expressions
+const typeofLit = (exp: LitExp): Result<TExp> => {
+    if (isSymbolSExp(exp.val))
+        return makeOk(makeSymbolTExp());
+    if (isEmptySExp(exp.val))
+        return makeOk(makeEmptyTExp());
+    if (isCompoundSExp(exp.val)) {
+        // For pairs, create a pair type with the types of both components
+        const val = exp.val;
+        return bind(typeofLit({ tag: "LitExp", val: val.val1 }), (t1: TExp) =>
+               bind(typeofLit({ tag: "LitExp", val: val.val2 }), (t2: TExp) =>
+                    makeOk(makePairTExp(t1, t2))));
+    }
+    // For other literals (numbers, booleans, strings), use their corresponding types
+    if (typeof exp.val === 'number')
+        return makeOk(makeNumTExp());
+    if (typeof exp.val === 'boolean')
+        return makeOk(makeBoolTExp());
+    if (typeof exp.val === 'string')
+        return makeOk(makeStrTExp());
+    return makeFailure(`Unknown literal type: ${format(exp.val)}`);
+};

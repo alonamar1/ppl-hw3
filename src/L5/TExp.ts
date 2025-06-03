@@ -11,7 +11,7 @@
 ;; <bool-te>      ::= boolean  // bool-te()
 ;; <str-te>       ::= string   // str-te()
 ;; <void-te>      ::= void     // void-te()
-;; <compound-te>  ::= <proc-te> | <tuple-te>
+;; <compound-te>  ::= <proc-te> | <tuple-te> | <pair-te>
 ;; <non-tuple-te> ::= <atomic-te> | <proc-te> | <tvar>
 ;; <proc-te>      ::= [ <tuple-te> -> <non-tuple-te> ] // proc-te(param-tes: list(te), return-te: te)
 ;; <tuple-te>     ::= <non-empty-tuple-te> | <empty-te>
@@ -42,12 +42,13 @@ import { format } from "../shared/format";
 export type TExp =  AtomicTExp | CompoundTExp | TVar;
 export const isTExp = (x: any): x is TExp => isAtomicTExp(x) || isCompoundTExp(x) || isTVar(x);
 
-export type AtomicTExp = NumTExp | BoolTExp | StrTExp | VoidTExp;
+export type AtomicTExp = NumTExp | BoolTExp | StrTExp | VoidTExp | SymbolTExp | ListTExp | EmptyTExp;
 export const isAtomicTExp = (x: any): x is AtomicTExp =>
-    isNumTExp(x) || isBoolTExp(x) || isStrTExp(x) || isVoidTExp(x);
+    isNumTExp(x) || isBoolTExp(x) || isStrTExp(x) || isVoidTExp(x) ||
+    isSymbolTExp(x) || isListTExp(x) || isEmptyTExp(x);
 
-export type CompoundTExp = ProcTExp | TupleTExp;
-export const isCompoundTExp = (x: any): x is CompoundTExp => isProcTExp(x) || isTupleTExp(x);
+export type CompoundTExp = ProcTExp | TupleTExp | PairTExp;
+export const isCompoundTExp = (x: any): x is CompoundTExp => isProcTExp(x) || isTupleTExp(x) || isPairTExp(x);
 
 export type NonTupleTExp = AtomicTExp | ProcTExp | TVar;
 export const isNonTupleTExp = (x: any): x is NonTupleTExp =>
@@ -163,7 +164,14 @@ export const parseTExp = (texp: Sexp): Result<TExp> =>
 ;; expected exactly one -> in the list
 ;; We do not accept (a -> b -> c) - must parenthesize
 */
-const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp> => {
+const parseCompoundTExp = (texps: Sexp[]): Result<TExp> => {
+    // Special case for Pair type
+    if (texps.length === 3 && texps[0] === 'Pair')
+        return bind(parseTExp(texps[1]), (comp1: TExp) =>
+               bind(parseTExp(texps[2]), (comp2: TExp) =>
+                    makeOk(makePairTExp(comp1, comp2))));
+    
+    // Handle existing procedure type expressions
     const pos = texps.indexOf('->');
     return (pos === -1)  ? makeFailure(`Procedure type expression without -> - ${format(texps)}`) :
            (pos === 0) ? makeFailure(`No param types in proc texp - ${format(texps)}`) :
@@ -212,6 +220,12 @@ export const unparseTExp = (te: TExp): Result<string> => {
         isProcTExp(x) ? bind(unparseTuple(x.paramTEs), (paramTEs: string[]) =>
                             mapv(unparseTExp(x.returnTE), (returnTE: string) =>
                                 [...paramTEs, '->', returnTE])) :
+        isPairTExp(x) ? bind(unparseTExp(x.comp1), (comp1: string) =>
+                           bind(unparseTExp(x.comp2), (comp2: string) =>
+                                makeOk(`(Pair ${comp1} ${comp2})`))) :
+        isSymbolTExp(x) ? makeOk('symbol') :
+        isListTExp(x) ? makeOk('list') :
+        isEmptyTExp(x) ? makeOk('Empty') :
         isEmptyTupleTExp(x) ? makeOk("Empty") :
         isNonEmptyTupleTExp(x) ? unparseTuple(x.TEs) :
         x === undefined ? makeFailure("Undefined TVar") :
@@ -298,3 +312,21 @@ export const equivalentTEs = (te1: TExp, te2: TExp): boolean => {
         return (uniq(map((p) => p.left.var, tvarsPairs)).length === uniq(map((p) => p.right.var, tvarsPairs)).length);
     }
 };
+
+// Add PairTExp definition
+export type PairTExp = { tag: "PairTExp"; comp1: TExp; comp2: TExp; }
+export const makePairTExp = (comp1: TExp, comp2: TExp): PairTExp =>
+    ({tag: "PairTExp", comp1: comp1, comp2: comp2});
+export const isPairTExp = (x: any): x is PairTExp => x.tag === "PairTExp";
+
+// Add SymbolTExp and ListTExp definitions
+export type SymbolTExp = { tag: "SymbolTExp" };
+export const makeSymbolTExp = (): SymbolTExp => ({tag: "SymbolTExp"});
+export const isSymbolTExp = (x: any): x is SymbolTExp => x.tag === "SymbolTExp";
+
+export type ListTExp = { tag: "ListTExp" };
+export type EmptyTExp = { tag: "EmptyTExp" };
+export const makeListTExp = (): ListTExp => ({tag: "ListTExp"});
+export const isListTExp = (x: any): x is ListTExp => x.tag === "ListTExp";
+export const makeEmptyTExp = (): EmptyTExp => ({tag: "EmptyTExp"});
+export const isEmptyTExp = (x: any): x is EmptyTExp => x.tag === "EmptyTExp";

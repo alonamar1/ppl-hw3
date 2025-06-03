@@ -63,14 +63,14 @@ export const isExp = (x: any): x is Exp => isDefineExp(x) || isCExp(x);
 export type CExp =  AtomicExp | CompoundExp;
 export const isCExp = (x: any): x is CExp => isAtomicExp(x) || isCompoundExp(x);
 
-export type AtomicExp = NumExp | BoolExp | StrExp | PrimOp | VarRef;
+export type AtomicExp = NumExp | BoolExp | StrExp | PrimOp | VarRef | LitExp;
 export const isAtomicExp = (x: any): x is AtomicExp =>
     isNumExp(x) || isBoolExp(x) || isStrExp(x) ||
-    isPrimOp(x) || isVarRef(x);
+    isPrimOp(x) || isVarRef(x) || isLitExp(x);
 
-export type CompoundExp = AppExp | IfExp | ProcExp | LetExp | LitExp | LetrecExp | SetExp;
+export type CompoundExp = AppExp | IfExp | ProcExp | LetExp | LetrecExp | SetExp;
 export const isCompoundExp = (x: any): x is CompoundExp =>
-    isAppExp(x) || isIfExp(x) || isProcExp(x) || isLitExp(x) || isLetExp(x) || isLetrecExp(x) || isSetExp(x);
+    isAppExp(x) || isIfExp(x) || isProcExp(x) || isLetExp(x) || isLetrecExp(x) || isSetExp(x);
 export const expComponents = (e: Exp): CExp[] =>
     isIfExp(e) ? [e.test, e.then, e.alt] :
     isProcExp(e) ? e.body :
@@ -229,6 +229,7 @@ export const parseL5Atomic = (token: Token): Result<AtomicExp> =>
     token === "#f" ? makeOk(makeBoolExp(false)) :
     isString(token) && isNumericString(token) ? makeOk(makeNumExp(+token)) :
     isString(token) && isPrimOpKeyword(token) ? makeOk(makePrimOp(token)) :
+    isString(token) && token.startsWith("'") ? parseLitExp(token.slice(1)) :
     isString(token) ? makeOk(makeVarRef(token)) :
     makeOk(makeStrExp(token.toString()));
 
