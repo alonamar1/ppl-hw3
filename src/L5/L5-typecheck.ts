@@ -225,6 +225,8 @@ export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
     return bind(constraint, _ => makeOk(makeVoidTExp()));
 };
 
+
+
 // Purpose: compute the type of a program
 // Typing rule:
 // If   type<exp1>(tenv) = t1
