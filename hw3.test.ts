@@ -1,7 +1,9 @@
 import * as assert from "assert";
 import { L5programTypeof, L5typeof } from "./src/L5/L5-typecheck";
-import { unparseTExp } from "./src/L5/TExp";
-import { parseL5Program } from "./src/L5/L5-ast";
+import * as checker from "./src/L5/L5-typecheck";
+console.log("Available exports from L5-typecheck:", Object.keys(checker));
+
+
 
 // Helper function to unwrap the Result from L5typeof
 function getTypeofValue(exp: string): string | Error {
@@ -15,14 +17,9 @@ function getTypeofValue(exp: string): string | Error {
 }
 
 function getTypeofProgram(exp: string): string | Error {
-    const parsed = parseL5Program(exp);
-    if (parsed.tag === 'Failure') {
-        return new Error(parsed.message);
-    }
-    const result = L5programTypeof(parsed.value);
+    const result = L5programTypeof(exp);
     if (result.tag === 'Ok') {
-        const unparsed = unparseTExp(result.value);
-        return unparsed.tag === 'Ok' ? unparsed.value : new Error(unparsed.message);
+        return result.value;
     } else {
         // Convert Failure to Error
         return new Error(result.message);

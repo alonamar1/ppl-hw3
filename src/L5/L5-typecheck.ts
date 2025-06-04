@@ -4,16 +4,18 @@ import { equals, map, zipWith } from 'ramda';
 import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNumExp,
          isPrimOp, isProcExp, isProgram, isStrExp, isVarRef, parseL5Exp, unparse,
          AppExp, BoolExp, DefineExp, Exp, IfExp, LetrecExp, LetExp, NumExp,
-         Parsed, PrimOp, ProcExp, Program, StrExp, isLitExp, LitExp } from "./L5-ast";
+         Parsed, PrimOp, ProcExp, Program, StrExp, isLitExp, LitExp, parseL5Program } from "./L5-ast";
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
          parseTE, unparseTExp, BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, makeSymbolTExp,
-         makeEmptyTExp, makeListTExp, makePairTExp } from "./TExp";
+         makeEmptyTExp, makeListTExp, makePairTExp, makeFreshTVar } from "./TExp";
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
 import { Result, makeFailure, bind, makeOk, zipWithResult } from '../shared/result';
 import { parse as p } from "../shared/parser";
 import { format } from '../shared/format';
 import { isSymbolSExp, isEmptySExp, isCompoundSExp } from './L5-value';
+import { mapResult } from '../shared/result';
+
 
 // Purpose: Check that type expressions are equivalent
 // as part of a fully-annotated type check process of exp.
@@ -92,9 +94,12 @@ export const typeofPrim = (p: PrimOp): Result<TExp> =>
     (p.op === '<') ? numCompTExp :
     (p.op === '=') ? numCompTExp :
     // Add pair operations
-    (p.op === 'cons') ? parseTE('(T1 * T2 -> (Pair T1 T2))') :
-    (p.op === 'car') ? parseTE('((Pair T1 T2) -> T1)') :
-    (p.op === 'cdr') ? parseTE('((Pair T1 T2) -> T2)') :
+    (p.op === 'cons') ? makeOk(makeProcTExp([makeFreshTVar(), makeFreshTVar()], 
+                                           makePairTExp(makeFreshTVar(), makeFreshTVar()))) :
+    (p.op === 'car') ? makeOk(makeProcTExp([makePairTExp(makeFreshTVar(), makeFreshTVar())], 
+                                          makeFreshTVar())) :
+    (p.op === 'cdr') ? makeOk(makeProcTExp([makePairTExp(makeFreshTVar(), makeFreshTVar())], 
+                                          makeFreshTVar())) :
     (p.op === 'pair?') ? parseTE('(T -> boolean)') :
     // Important to use a different signature for each op with a TVar to avoid capture
     (p.op === 'number?') ? parseTE('(T -> boolean)') :
@@ -219,16 +224,16 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 // If   type<val>(tenv) = texp
 // then type<(define (var : texp) val)>(tenv) = void
 export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
-    const valTE = typeofExp(exp.val, tenv);
+    // First extend the environment with the variable binding for recursive definitions
+    const extTEnv = makeExtendTEnv([exp.var.var], [exp.var.texp], tenv);
+    const valTE = typeofExp(exp.val, extTEnv);
     const constraint = bind(valTE, (valueTE: TExp) => 
-                            checkEqualType(valueTE, exp.var.texp, exp));
-    return bind(constraint, _ => makeOk(makeVoidTExp()));
+        checkEqualType(valueTE, exp.var.texp, exp));
+    return bind(constraint, () => makeOk(makeVoidTExp()));
 };
 
-
-
 // Purpose: compute the type of a program
-// Typing rule:
+// Typing rule:(L5 exp1 ... expn)
 // If   type<exp1>(tenv) = t1
 //      ...
 //      type<expn>(tenv) = tn
@@ -238,15 +243,14 @@ export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> => {
     if (exp.exps.length === 0)
         return makeFailure("Empty program");
 
-    // Process each expression in sequence, threading the type environment
     return bind(
         exp.exps.reduce<Result<[TExp, TEnv]>>(
             (acc: Result<[TExp, TEnv]>, current: Exp) => 
-                bind(acc, ([_, tenv]: [TExp, TEnv]) => {
+                bind(acc, ([prevType, tenv]: [TExp, TEnv]) => {
                     const expTE = typeofExp(current, tenv);
                     if (isDefineExp(current))
                         // For define expressions, extend the type environment
-                        return bind(expTE, (_: TExp) => 
+                        return bind(expTE, (prevType: TExp) => 
                             makeOk([makeVoidTExp(), makeExtendTEnv([current.var.var], [current.var.texp], tenv)]));
                     else
                         // For other expressions, keep the same environment
@@ -254,11 +258,26 @@ export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> => {
                 }),
             makeOk([makeVoidTExp(), tenv])
         ),
-        ([finalTE, _]: [TExp, TEnv]) => makeOk(finalTE)
+        ([finalTE, finalTEnv]: [TExp, TEnv]) => makeOk(finalTE)
     );
 };
 
-// Add typeofLit function to handle quoted expressions
+const initTEnv = (): TEnv =>
+    makeExtendTEnv([], [], makeEmptyTEnv());
+
+// Export this function to be used in tests
+const L5programTypeof = (exp: string): Result<string> => {
+    const parsed = parseL5Program(exp);
+    if (parsed.tag === 'Failure')
+        return parsed;
+    const typeResult = typeofProgram(parsed.value, initTEnv());
+    return bind(typeResult, (te: TExp) => unparseTExp(te));
+};
+
+// Make sure to export all necessary functions
+export { L5programTypeof};
+
+// Add typeofLit function to handle quoted expressions (in TExp.ts there are more "make" functions)
 const typeofLit = (exp: LitExp): Result<TExp> => {
     if (isSymbolSExp(exp.val))
         return makeOk(makeSymbolTExp());
@@ -271,7 +290,7 @@ const typeofLit = (exp: LitExp): Result<TExp> => {
                bind(typeofLit({ tag: "LitExp", val: val.val2 }), (t2: TExp) =>
                     makeOk(makePairTExp(t1, t2))));
     }
-    // For other literals (numbers, booleans, strings), use their corresponding types
+    // For other literals , use their corresponding types
     if (typeof exp.val === 'number')
         return makeOk(makeNumTExp());
     if (typeof exp.val === 'boolean')
@@ -280,3 +299,5 @@ const typeofLit = (exp: LitExp): Result<TExp> => {
         return makeOk(makeStrTExp());
     return makeFailure(`Unknown literal type: ${format(exp.val)}`);
 };
+
+
