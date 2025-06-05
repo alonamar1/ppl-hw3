@@ -34,7 +34,7 @@ const checkEqualType = (te1: TExp, te2: TExp, exp: Exp): Result<true> =>
 // of its structure and the annotations it contains.
 
 // Purpose: Compute the type of a concrete fully-typed expression
-export const L5typeof = (concreteExp: string): Result<string> =>
+const L5typeof = (concreteExp: string): Result<string> =>
     bind(p(concreteExp), (x) =>
         bind(parseL5Exp(x), (e: Exp) => 
             bind(typeofExp(e, makeEmptyTEnv()), unparseTExp)));
@@ -94,12 +94,30 @@ export const typeofPrim = (p: PrimOp): Result<TExp> =>
     (p.op === '<') ? numCompTExp :
     (p.op === '=') ? numCompTExp :
     // Add pair operations
-    (p.op === 'cons') ? makeOk(makeProcTExp([makeFreshTVar(), makeFreshTVar()], 
-                                           makePairTExp(makeFreshTVar(), makeFreshTVar()))) :
-    (p.op === 'car') ? makeOk(makeProcTExp([makePairTExp(makeFreshTVar(), makeFreshTVar())], 
-                                          makeFreshTVar())) :
-    (p.op === 'cdr') ? makeOk(makeProcTExp([makePairTExp(makeFreshTVar(), makeFreshTVar())], 
-                                          makeFreshTVar())) :
+    (p.op === "cons") ? (() => {
+        const a = makeFreshTVar();          // car  (T₁)
+        const d = makeFreshTVar();          // cdr  (T₂)
+        return makeOk(
+            makeProcTExp([a, d],            // (T₁ , T₂)
+                         makePairTExp(a, d))//  → (Pair T₁ T₂)
+        );
+    })() :
+    (p.op === "car")  ? (() => {
+        const a = makeFreshTVar();
+        const d = makeFreshTVar();
+        return makeOk(
+            makeProcTExp([makePairTExp(a, d)],  // (Pair T₁ T₂)
+                         a)                      // → T₁
+        );
+    })() :
+    (p.op === "cdr")  ? (() => {
+        const a = makeFreshTVar();
+        const d = makeFreshTVar();
+        return makeOk(
+            makeProcTExp([makePairTExp(a, d)],  // (Pair T₁ T₂)
+                         d)                      // → T₂
+        );
+    })() :
     (p.op === 'pair?') ? parseTE('(T -> boolean)') :
     // Important to use a different signature for each op with a TVar to avoid capture
     (p.op === 'number?') ? parseTE('(T -> boolean)') :
@@ -159,6 +177,24 @@ export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> =>
             return bind(unparseTExp(ratorTE), (rator: string) =>
                         bind(unparse(app), (exp: string) =>
                             makeFailure<TExp>(`Application of non-procedure: ${rator} in ${exp}`)));
+        }
+        if (isPrimOp(app.rator)) {
+            switch (app.rator.op) {
+                case "cons":
+                    return bind(typeofExp(app.rands[0], tenv), (t1: TExp) =>
+                           bind(typeofExp(app.rands[1], tenv), (t2: TExp) =>
+                                makeOk(makePairTExp(t1, t2))));
+                case "car":
+                    return bind(typeofExp(app.rands[0], tenv), (tp: TExp) =>
+                           (tp.tag === "PairTExp")
+                               ? makeOk(tp.fstTE)
+                               : makeFailure("car expects a pair"));
+                case "cdr":
+                    return bind(typeofExp(app.rands[0], tenv), (tp: TExp) =>
+                           (tp.tag === "PairTExp")
+                               ? makeOk(tp.sndTE)
+                               : makeFailure("cdr expects a pair"));
+            }
         }
         if (app.rands.length !== ratorTE.paramTEs.length) {
             return bind(unparse(app), (exp: string) => makeFailure<TExp>(`Wrong parameter numbers passed to proc: ${exp}`));
@@ -266,16 +302,13 @@ const initTEnv = (): TEnv =>
     makeExtendTEnv([], [], makeEmptyTEnv());
 
 // Export this function to be used in tests
-const L5programTypeof = (exp: string): Result<string> => {
-    const parsed = parseL5Program(exp);
-    if (parsed.tag === 'Failure')
-        return parsed;
-    const typeResult = typeofProgram(parsed.value, initTEnv());
-    return bind(typeResult, (te: TExp) => unparseTExp(te));
-};
+const L5programTypeof = (src: string): Result<string> =>
+    bind(p(src), (sexp) =>
+        bind(parseL5Program(sexp), (prog: Program) =>
+            bind(typeofProgram(prog, initTEnv()), unparseTExp)));
 
 // Make sure to export all necessary functions
-export { L5programTypeof};
+export { L5programTypeof, L5typeof};
 
 // Add typeofLit function to handle quoted expressions (in TExp.ts there are more "make" functions)
 const typeofLit = (exp: LitExp): Result<TExp> => {
