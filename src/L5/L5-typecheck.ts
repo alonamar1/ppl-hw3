@@ -16,7 +16,6 @@ import { format } from '../shared/format';
 import { isSymbolSExp, isEmptySExp, isCompoundSExp, SExpValue} from './L5-value';
 
 
-
 // Purpose: Check that type expressions are equivalent
 // as part of a fully-annotated type check process of exp.
 // Return an error if the types are different - true otherwise.
@@ -181,17 +180,18 @@ export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> =>
                             makeFailure<TExp>(`Application of non-procedure: ${rator} in ${exp}`)));
         }
         if (isPrimOp(app.rator)) {
-            switch (app.rator.op) {
-                case "cons":
+            if (app.rator.op === "cons") {
                     return bind(typeofExp(app.rands[0], tenv), (t1: TExp) =>
                            bind(typeofExp(app.rands[1], tenv), (t2: TExp) =>
                                 makeOk(makePairTExp(t1, t2))));
-                case "car":
+            }
+            if (app.rator.op === "car") {
                     return bind(typeofExp(app.rands[0], tenv), (tp: TExp) =>
                            (tp.tag === "PairTExp")
                                ? makeOk(tp.left)
                                : makeFailure("car expects a pair"));
-                case "cdr":
+            }
+            if (app.rator.op === "cdr") {
                     return bind(typeofExp(app.rands[0], tenv), (tp: TExp) =>
                            (tp.tag === "PairTExp")
                                ? makeOk(tp.right)
