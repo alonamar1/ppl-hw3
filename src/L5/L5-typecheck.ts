@@ -7,8 +7,7 @@ import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNum
          Parsed, PrimOp, ProcExp, Program, StrExp, isLitExp, LitExp, parseL5Program } from "./L5-ast";
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
-         parseTE, unparseTExp, BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, makeSymbolTExp,
-         makeEmptyTExp, makePairTExp, makeFreshTVar, makeLiteralTExp} from "./TExp";  
+         parseTE, unparseTExp, BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, makePairTExp, makeFreshTVar, makeLiteralTExp} from "./TExp";  
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
 import { Result, makeFailure, bind, makeOk, zipWithResult } from '../shared/result';
 import { parse as p } from "../shared/parser";
@@ -326,7 +325,7 @@ export const typeofLit = (exp: LitExp): Result<TExp> => {
 const typeofLitDeep = (val: SExpValue): Result<TExp> => {
     // 1) Quoted empty list → EmptyTExp
     if (isEmptySExp(val)) {
-      return makeOk(makeEmptyTExp());
+      return makeOk(makeLiteralTExp());
     }
     // 2) Quoted pair (compound S-expression) → recursively type both sides and return PairTExp
     if (isCompoundSExp(val)) {
