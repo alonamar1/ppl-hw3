@@ -8,13 +8,13 @@ import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNum
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
          parseTE, unparseTExp, BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, makeSymbolTExp,
-         makeEmptyTExp, makeListTExp, makePairTExp, makeFreshTVar } from "./TExp";
+         makeEmptyTExp, makeListTExp , makePairTExp, makeFreshTVar, makeLiteralTExp} from "./TExp";  //Romi - added, I think we can remove makeListTExp
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
 import { Result, makeFailure, bind, makeOk, zipWithResult } from '../shared/result';
 import { parse as p } from "../shared/parser";
 import { format } from '../shared/format';
 import { isSymbolSExp, isEmptySExp, isCompoundSExp } from './L5-value';
-import { mapResult } from '../shared/result';
+
 
 
 // Purpose: Check that type expressions are equivalent
@@ -54,8 +54,8 @@ export const typeofExp = (exp: Parsed, tenv: TEnv): Result<TExp> =>
     isLetExp(exp) ? typeofLet(exp, tenv) :
     isLetrecExp(exp) ? typeofLetrec(exp, tenv) :
     isDefineExp(exp) ? typeofDefine(exp, tenv) :
-    isProgram(exp) ? typeofProgram(exp, tenv) :
     isLitExp(exp) ? typeofLit(exp) :
+    isProgram(exp) ? typeofProgram(exp, tenv) :
     makeFailure(`Unknown type: ${format(exp)}`);
 
 // Purpose: Compute the type of a sequence of expressions
@@ -132,6 +132,7 @@ export const typeofPrim = (p: PrimOp): Result<TExp> =>
     (p.op === 'newline') ? parseTE('(Empty -> void)') :
     makeFailure(`Primitive not yet implemented: ${p.op}`);
 
+
 // Purpose: compute the type of an if-exp
 // Typing rule:
 //   if type<test>(tenv) = boolean
@@ -171,6 +172,7 @@ export const typeofProc = (proc: ProcExp, tenv: TEnv): Result<TExp> => {
 //      type<randn>(tenv) = tn
 // then type<(rator rand1...randn)>(tenv) = t
 // We also check the correct number of arguments is passed.
+
 export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> =>
     bind(typeofExp(app.rator, tenv), (ratorTE: TExp) => {
         if (! isProcTExp(ratorTE)) {
@@ -187,12 +189,12 @@ export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> =>
                 case "car":
                     return bind(typeofExp(app.rands[0], tenv), (tp: TExp) =>
                            (tp.tag === "PairTExp")
-                               ? makeOk(tp.fstTE)
+                               ? makeOk(tp.left)
                                : makeFailure("car expects a pair"));
                 case "cdr":
                     return bind(typeofExp(app.rands[0], tenv), (tp: TExp) =>
                            (tp.tag === "PairTExp")
-                               ? makeOk(tp.sndTE)
+                               ? makeOk(tp.right)
                                : makeFailure("cdr expects a pair"));
             }
         }
@@ -311,26 +313,96 @@ const L5programTypeof = (src: string): Result<string> =>
 export { L5programTypeof, L5typeof};
 
 // Add typeofLit function to handle quoted expressions (in TExp.ts there are more "make" functions)
-const typeofLit = (exp: LitExp): Result<TExp> => {
-    if (isSymbolSExp(exp.val))
-        return makeOk(makeSymbolTExp());
-    if (isEmptySExp(exp.val))
-        return makeOk(makeEmptyTExp());
-    if (isCompoundSExp(exp.val)) {
-        // For pairs, create a pair type with the types of both components
-        const val = exp.val;
-        return bind(typeofLit({ tag: "LitExp", val: val.val1 }), (t1: TExp) =>
-               bind(typeofLit({ tag: "LitExp", val: val.val2 }), (t2: TExp) =>
-                    makeOk(makePairTExp(t1, t2))));
+// Romi - checking a new version
+// const typeofLit = (exp: LitExp): Result<TExp> => {
+//     if (isSymbolSExp(exp.val))
+//         return makeOk(makeSymbolTExp());
+//     if (isEmptySExp(exp.val))
+//         return makeOk(makeEmptyTExp());
+//     if (isCompoundSExp(exp.val)) {
+//         // For pairs, create a pair type with the types of both components
+//         const val = exp.val;
+//         return bind(typeofLit({ tag: "LitExp", val: val.val1 }), (t1: TExp) =>
+//                bind(typeofLit({ tag: "LitExp", val: val.val2 }), (t2: TExp) =>
+//                     makeOk(makePairTExp(t1, t2))));
+//     }
+//     // For other literals , use their corresponding types
+//     if (typeof exp.val === 'number')
+//         return makeOk(makeNumTExp());
+//     if (typeof exp.val === 'boolean')
+//         return makeOk(makeBoolTExp());
+//     if (typeof exp.val === 'string')
+//         return makeOk(makeStrTExp());
+//     return makeFailure(`Unknown literal type: ${format(exp.val)}`);
+// };
+
+// const typeofLit = (exp: LitExp): Result<TExp> => {
+//     // if it's an empty quoted list → EmptyTExp
+//     if (isEmptySExp(exp.val))
+//         return makeOk(makeEmptyTExp());
+
+//     // if it's a quoted pair → PairTExp of the two sides
+//     if (isCompoundSExp(exp.val)) {
+//         const val = exp.val;
+//         return bind(typeofLit({ tag: "LitExp", val: val.val1 }), (t1: TExp) =>
+//                bind(typeofLit({ tag: "LitExp", val: val.val2 }), (t2: TExp) =>
+//                     makeOk(makePairTExp(t1, t2))));
+//     }
+
+//     // if it's a single atom (number, boolean, string or symbol) → LiteralTExp
+//     if (typeof exp.val === 'number' || typeof exp.val === 'boolean' || typeof exp.val === 'string' || isSymbolSExp(exp.val))
+//         return makeOk(makeLiteralTExp());
+
+//     return makeFailure(`Unknown literal type: ${format(exp.val)}`);
+// };
+
+
+
+// Romi- CHECK
+
+// Entry point for typing a quoted literal expression
+export const typeofLit = (exp: LitExp): Result<TExp> => {
+    // If the quoted value is either an empty list or a compound S-expression (a dotted-pair),
+    // delegate to the “deep” literal-typing function, which recurses into the structure.
+    const val = exp.val;
+    if (isEmptySExp(val) || isCompoundSExp(val)) {
+      return typeofLitDeep(val);
+    } 
+    // Otherwise (a single atom: number, boolean, string, or symbol), treat it as a generic literal.
+    return makeOk(makeLiteralTExp());
+  };
+
+ // “Deep” typing for quoted values, handling nested structure and atomic cases
+const typeofLitDeep = (val: SExpValue): Result<TExp> => {
+    // 1) Quoted empty list → EmptyTExp
+    if (isEmptySExp(val)) {
+      return makeOk(makeEmptyTExp());
     }
-    // For other literals , use their corresponding types
-    if (typeof exp.val === 'number')
-        return makeOk(makeNumTExp());
-    if (typeof exp.val === 'boolean')
-        return makeOk(makeBoolTExp());
-    if (typeof exp.val === 'string')
-        return makeOk(makeStrTExp());
-    return makeFailure(`Unknown literal type: ${format(exp.val)}`);
-};
-
-
+    // 2) Quoted pair (compound S-expression) → recursively type both sides and return PairTExp
+    if (isCompoundSExp(val)) {
+      const leftVal  = val.val1;
+      const rightVal = val.val2;
+      return bind(typeofLitDeep(leftVal), (t1: TExp) =>
+             bind(typeofLitDeep(rightVal), (t2: TExp) =>
+                  makeOk(makePairTExp(t1, t2))));
+    }
+    // 3) Quoted number → NumTExp
+    if (typeof val === "number") {
+      return makeOk(makeNumTExp());
+    }
+    // 4) Quoted boolean → BoolTExp
+    if (typeof val === "boolean") {
+      return makeOk(makeBoolTExp());
+    }
+    // 5) Quoted string → StrTExp
+    if (typeof val === "string") {
+      return makeOk(makeStrTExp());
+    }
+    // 6) Quoted symbol → SymbolTExp
+    if (isSymbolSExp(val)) {
+      return makeOk(makeLiteralTExp());  // QUOTED SYMBOL INSIDE A PAIR must become LiteralTExp, not SymbolTExp:
+    }
+    // 7) Any other case is unexpected
+    return makeFailure(`Unknown literal type: ${format(val)}`);
+  };
+  

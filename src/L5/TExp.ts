@@ -42,13 +42,13 @@ import { format } from "../shared/format";
 export type TExp =  AtomicTExp | CompoundTExp | TVar;
 export const isTExp = (x: any): x is TExp => isAtomicTExp(x) || isCompoundTExp(x) || isTVar(x);
 
-export type AtomicTExp = NumTExp | BoolTExp | StrTExp | VoidTExp | SymbolTExp | ListTExp | EmptyTExp;
+export type AtomicTExp = NumTExp | BoolTExp | StrTExp | VoidTExp | SymbolTExp | ListTExp | EmptyTExp | LiteralTExp; //Romi - added LiteralTExp
 export const isAtomicTExp = (x: any): x is AtomicTExp =>
     isNumTExp(x) || isBoolTExp(x) || isStrTExp(x) || isVoidTExp(x) ||
     isSymbolTExp(x) || isListTExp(x) || isEmptyTExp(x);
 
-export type CompoundTExp = ProcTExp | TupleTExp | PairTExp;
-export const isCompoundTExp = (x: any): x is CompoundTExp => isProcTExp(x) || isTupleTExp(x) || isPairTExp(x);
+export type CompoundTExp = ProcTExp | TupleTExp | PairTExp; //Romi - added PairTExp
+export const isCompoundTExp = (x: any): x is CompoundTExp => isProcTExp(x) || isTupleTExp(x) || isPairTExp(x); //Romi - added isPairTExp
 
 export type NonTupleTExp = AtomicTExp | ProcTExp | TVar;
 export const isNonTupleTExp = (x: any): x is NonTupleTExp =>
@@ -167,9 +167,9 @@ export const parseTExp = (texp: Sexp): Result<TExp> =>
 const parseCompoundTExp = (texps: Sexp[]): Result<TExp> => {
     // Special case for Pair type
     if (texps.length === 3 && texps[0] === 'Pair')
-        return bind(parseTExp(texps[1]), (comp1: TExp) =>
-               bind(parseTExp(texps[2]), (comp2: TExp) =>
-                    makeOk(makePairTExp(comp1, comp2))));
+        return bind(parseTExp(texps[1]), (left: TExp) =>
+               bind(parseTExp(texps[2]), (right: TExp) =>
+                    makeOk(makePairTExp(left, right))));
     
     // Handle existing procedure type expressions
     const pos = texps.indexOf('->');
@@ -211,18 +211,21 @@ export const unparseTExp = (te: TExp): Result<string> => {
         makeOk(["Empty"]);
 
     const up = (x?: TExp): Result<string | string[]> =>
+        x === undefined ? makeFailure("Undefined TVar") : //Romi - added
         isNumTExp(x) ? makeOk('number') :
         isBoolTExp(x) ? makeOk('boolean') :
         isStrTExp(x) ? makeOk('string') :
         isVoidTExp(x) ? makeOk('void') :
+        isLiteralTExp(x) ? makeOk("literal") : //Romi - added LiteralTExp
         isEmptyTVar(x) ? makeOk(x.var) :
         isTVar(x) ? up(tvarContents(x)) :
         isProcTExp(x) ? bind(unparseTuple(x.paramTEs), (paramTEs: string[]) =>
                             mapv(unparseTExp(x.returnTE), (returnTE: string) =>
                                 [...paramTEs, '->', returnTE])) :
-        isPairTExp(x) ? bind(unparseTExp(x.comp1), (comp1: string) =>
-                           bind(unparseTExp(x.comp2), (comp2: string) =>
-                                makeOk(`(Pair ${comp1} ${comp2})`))) :
+        isPairTExp(x) ? bind(unparseTExp(x.left), (left: string) =>
+                           bind(unparseTExp(x.right), (right: string) =>
+                                makeOk(`(Pair ${left} ${right})`))) :
+        
         isSymbolTExp(x) ? makeOk('symbol') :
         isListTExp(x) ? makeOk('list') :
         isEmptyTExp(x) ? makeOk('Empty') :
@@ -314,9 +317,13 @@ export const equivalentTEs = (te1: TExp, te2: TExp): boolean => {
 };
 
 // Add PairTExp definition
-export type PairTExp = { tag: "PairTExp"; comp1: TExp; comp2: TExp; }
-export const makePairTExp = (comp1: TExp, comp2: TExp): PairTExp =>
-    ({tag: "PairTExp", comp1: comp1, comp2: comp2});
+//Romi - removed PairTExp definition another version is down
+//export type PairTExp = { tag: "PairTExp"; comp1: TExp; comp2: TExp; }
+//export const makePairTExp = (comp1: TExp, comp2: TExp): PairTExp =>
+//    ({tag: "PairTExp", comp1: comp1, comp2: comp2});
+export type PairTExp = { tag: "PairTExp"; left: TExp; right: TExp; };
+export const makePairTExp = (left: TExp, right: TExp): PairTExp =>
+    ({ tag: "PairTExp", left, right });
 export const isPairTExp = (x: any): x is PairTExp => x.tag === "PairTExp";
 
 // Add SymbolTExp and ListTExp definitions
@@ -330,3 +337,8 @@ export const makeListTExp = (): ListTExp => ({tag: "ListTExp"});
 export const isListTExp = (x: any): x is ListTExp => x.tag === "ListTExp";
 export const makeEmptyTExp = (): EmptyTExp => ({tag: "EmptyTExp"});
 export const isEmptyTExp = (x: any): x is EmptyTExp => x.tag === "EmptyTExp";
+
+// Add LiteralTExp definition
+export type LiteralTExp = { tag: "LiteralTExp" };
+export const makeLiteralTExp = (): LiteralTExp => ({ tag: "LiteralTExp" });
+export const isLiteralTExp = (x: any): x is LiteralTExp => x.tag === "LiteralTExp";
