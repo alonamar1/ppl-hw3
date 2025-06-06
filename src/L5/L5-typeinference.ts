@@ -207,42 +207,15 @@ export const typeofLetrec = (exp: A.LetrecExp, tenv: E.TEnv): Result<T.TExp> => 
 // Purpose: compute the type of a define
 // Typing rule:
 //   (define (var : texp) val)
-// If   type<val>(tenv) = texp
-// then type<(define (var : texp) val)>(tenv) = void
+// TODO - write the true definition
 export const typeofDefine = (exp: A.DefineExp, tenv: E.TEnv): Result<T.VoidTExp> => {
-    const valTE = typeofExp(exp.val, tenv);
-    const constraint = bind(valTE, (valueTE: T.TExp) => 
-        checkEqualType(valueTE, exp.var.texp, exp));
-    return bind(constraint, () => makeOk(T.makeVoidTExp()));
+    // return Error("TODO");
+    return makeOk(T.makeVoidTExp());
 };
 
 // Purpose: compute the type of a program
-// Typing rule:(L5 exp1 ... expn)
-// If   type<exp1>(tenv) = t1
-//      ...
-//      type<expn>(tenv) = tn
-// then type<(L5 exp1 ... expn)>(tenv) = tn
+// Typing rule:
+// TODO - write the true definition
 export const typeofProgram = (exp: A.Program, tenv: E.TEnv): Result<T.TExp> => {
-    // Handle empty program
-    if (exp.exps.length === 0)
-        return makeFailure("Empty program");
-
-    return bind(
-        exp.exps.reduce<Result<[T.TExp, E.TEnv]>>(
-            (acc: Result<[T.TExp, E.TEnv]>, current: A.Exp) => 
-                bind(acc, ([prevType, tenv]: [T.TExp, E.TEnv]) => {
-                    const expTE = typeofExp(current, tenv);
-                    if (A.isDefineExp(current))
-                        // For define expressions, extend the type environment
-                        return bind(expTE, (prevType: T.TExp) => 
-                            makeOk([T.makeVoidTExp(), E.makeExtendTEnv([current.var.var], [current.var.texp], tenv)]));
-                    else
-                        // For other expressions, keep the same environment
-                        return bind(expTE, (te: T.TExp) => makeOk([te, tenv]));
-                }),
-            makeOk([T.makeVoidTExp(), tenv])
-        ),
-        ([finalTE, finalTEnv]: [T.TExp, E.TEnv]) => makeOk(finalTE)
-    );
+    return makeFailure("TODO");
 };
-

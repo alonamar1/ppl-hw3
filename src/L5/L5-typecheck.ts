@@ -8,12 +8,12 @@ import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNum
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
          parseTE, unparseTExp, BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, makeSymbolTExp,
-         makeEmptyTExp, makeListTExp , makePairTExp, makeFreshTVar, makeLiteralTExp} from "./TExp";  //Romi - added, I think we can remove makeListTExp
+         makeEmptyTExp, makePairTExp, makeFreshTVar, makeLiteralTExp} from "./TExp";  
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
 import { Result, makeFailure, bind, makeOk, zipWithResult } from '../shared/result';
 import { parse as p } from "../shared/parser";
 import { format } from '../shared/format';
-import { isSymbolSExp, isEmptySExp, isCompoundSExp } from './L5-value';
+import { isSymbolSExp, isEmptySExp, isCompoundSExp, SExpValue} from './L5-value';
 
 
 
@@ -259,8 +259,8 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 // Purpose: compute the type of a define
 // Typing rule:
 //   (define (var : texp) val)
-// If   type<val>(tenv) = texp
-// then type<(define (var : texp) val)>(tenv) = void
+//TODO:ALON
+
 export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
     // First extend the environment with the variable binding for recursive definitions
     const extTEnv = makeExtendTEnv([exp.var.var], [exp.var.texp], tenv);
@@ -272,10 +272,7 @@ export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
 
 // Purpose: compute the type of a program
 // Typing rule:(L5 exp1 ... expn)
-// If   type<exp1>(tenv) = t1
-//      ...
-//      type<expn>(tenv) = tn
-// then type<(L5 exp1 ... expn)>(tenv) = tn
+//TODO:ALON
 export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> => {
     // Handle empty program
     if (exp.exps.length === 0)
@@ -313,53 +310,6 @@ const L5programTypeof = (src: string): Result<string> =>
 export { L5programTypeof, L5typeof};
 
 // Add typeofLit function to handle quoted expressions (in TExp.ts there are more "make" functions)
-// Romi - checking a new version
-// const typeofLit = (exp: LitExp): Result<TExp> => {
-//     if (isSymbolSExp(exp.val))
-//         return makeOk(makeSymbolTExp());
-//     if (isEmptySExp(exp.val))
-//         return makeOk(makeEmptyTExp());
-//     if (isCompoundSExp(exp.val)) {
-//         // For pairs, create a pair type with the types of both components
-//         const val = exp.val;
-//         return bind(typeofLit({ tag: "LitExp", val: val.val1 }), (t1: TExp) =>
-//                bind(typeofLit({ tag: "LitExp", val: val.val2 }), (t2: TExp) =>
-//                     makeOk(makePairTExp(t1, t2))));
-//     }
-//     // For other literals , use their corresponding types
-//     if (typeof exp.val === 'number')
-//         return makeOk(makeNumTExp());
-//     if (typeof exp.val === 'boolean')
-//         return makeOk(makeBoolTExp());
-//     if (typeof exp.val === 'string')
-//         return makeOk(makeStrTExp());
-//     return makeFailure(`Unknown literal type: ${format(exp.val)}`);
-// };
-
-// const typeofLit = (exp: LitExp): Result<TExp> => {
-//     // if it's an empty quoted list → EmptyTExp
-//     if (isEmptySExp(exp.val))
-//         return makeOk(makeEmptyTExp());
-
-//     // if it's a quoted pair → PairTExp of the two sides
-//     if (isCompoundSExp(exp.val)) {
-//         const val = exp.val;
-//         return bind(typeofLit({ tag: "LitExp", val: val.val1 }), (t1: TExp) =>
-//                bind(typeofLit({ tag: "LitExp", val: val.val2 }), (t2: TExp) =>
-//                     makeOk(makePairTExp(t1, t2))));
-//     }
-
-//     // if it's a single atom (number, boolean, string or symbol) → LiteralTExp
-//     if (typeof exp.val === 'number' || typeof exp.val === 'boolean' || typeof exp.val === 'string' || isSymbolSExp(exp.val))
-//         return makeOk(makeLiteralTExp());
-
-//     return makeFailure(`Unknown literal type: ${format(exp.val)}`);
-// };
-
-
-
-// Romi- CHECK
-
 // Entry point for typing a quoted literal expression
 export const typeofLit = (exp: LitExp): Result<TExp> => {
     // If the quoted value is either an empty list or a compound S-expression (a dotted-pair),
